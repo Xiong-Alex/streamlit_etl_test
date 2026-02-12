@@ -1,0 +1,14 @@
+# Docker / volumes
+data/
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+
+
+# Env files | visible for now since its just on local
+# .env
+
+# OS
+.DS_Store
