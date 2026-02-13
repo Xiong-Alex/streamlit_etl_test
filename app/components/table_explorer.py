@@ -12,7 +12,6 @@ def render_table_explorer(
     truncate_sql: str | None = None,
     default_limit: int = 20,
 ):
-
     engine = get_engine()
 
     # ----------------------------------
@@ -34,61 +33,70 @@ def render_table_explorer(
     # ----------------------------------
     # Session State
     # ----------------------------------
-    query_state_key = f"query_{session_key}"
+    query_key = f"query_{session_key}"
     editor_key = f"editor_{session_key}"
 
-    default_query = f"SELECT * FROM {table_name} LIMIT {default_limit};"
-
-    if query_state_key not in st.session_state:
-        st.session_state[query_state_key] = default_query
+    if query_key not in st.session_state:
+        st.session_state[query_key] = (
+            f"SELECT * FROM {table_name} LIMIT {default_limit};"
+        )
 
     # ----------------------------------
-    # Data Preview
+    # AUTO PREVIEW (FIRST)
     # ----------------------------------
     try:
-        df = pd.read_sql(
-            text(st.session_state[query_state_key]),
-            engine
-        )
-        st.dataframe(df, use_container_width=True)
+        with engine.begin() as conn:
+            result = conn.execute(text(st.session_state[query_key]))
+
+            if result.returns_rows:
+                df = pd.DataFrame(
+                    result.fetchall(),
+                    columns=result.keys()
+                )
+                st.dataframe(df, width="stretch")
+            else:
+                st.success(
+                    f"Query executed successfully. "
+                    f"{result.rowcount} rows affected."
+                )
 
     except Exception as e:
-        st.warning(f"Preview failed: {e}")
+        st.warning(f"Query failed: {e}")
+
 
     # ----------------------------------
-    # Query Editor
+    # QUERY EDITOR (AFTER PREVIEW)
     # ----------------------------------
     edited_query = st.text_area(
-        label="",
-        value=st.session_state[query_state_key],
+        "SQL Query",
+        value=st.session_state[query_key],
         height=150,
         key=editor_key,
+        label_visibility="collapsed",
     )
 
     col1, col2 = st.columns(2)
 
     # ----------------------------------
-    # Run Query
+    # RUN BUTTON
     # ----------------------------------
     with col1:
-        if st.button("Run Query", key=f"run_{session_key}", use_container_width=True):
-            st.session_state[query_state_key] = edited_query
-            st.rerun()
+        if st.button("Run Query", key=f"run_{session_key}", width="stretch"):
+            st.session_state[query_key] = edited_query
 
     # ----------------------------------
-    # Truncate Table
+    # TRUNCATE BUTTON
     # ----------------------------------
     with col2:
         if allow_truncate and truncate_sql:
             if st.button(
                 "Truncate Table",
                 key=f"truncate_{session_key}",
-                use_container_width=True
+                width="stretch"
             ):
                 try:
                     with engine.begin() as conn:
                         conn.execute(text(truncate_sql))
                     st.success(f"{table_name} truncated.")
-                    st.rerun()
                 except Exception as e:
                     st.error(f"Truncate failed: {e}")

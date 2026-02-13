@@ -1,62 +1,65 @@
 # ----------------------------------
 # Imports
 # ----------------------------------
-from pathlib import Path
 import streamlit as st
+from pathlib import Path
 
-from components.ingest_panel import render_ingest_panel
+from pipeline.stations import ingest
+from components.directory_viewer import render_directory_view
 from components.table_explorer import render_table_explorer
+from components.db import get_engine
+
+
+# ----------------------------------
+# Constants
+# ----------------------------------
+LANDING_DIR = Path("/data/landing/stations")
 
 
 # ----------------------------------
 # Page Title
 # ----------------------------------
-st.title("Station Bronze Ingest")
+st.title("Stations: Ingest to Bronze")
 
 
 # ----------------------------------
-# Paths
+# Landing Directory
 # ----------------------------------
-LANDING_DIR = Path("/data/landing/stations")
-ARCHIVE_DIR = Path("/data/archive/stations")
-
-
-# ----------------------------------
-# 1️⃣ Ingest Panel
-# ----------------------------------
-render_ingest_panel(
-    dataset_name="Stations",
-    landing_dir=LANDING_DIR,
-    archive_dir=ARCHIVE_DIR,
-    table_name="bronze.stations",
-    copy_sql="""
-        COPY bronze.stations (
-            station_id,
-            latitude,
-            longitude,
-            elevation,
-            state,
-            name,
-            gsn,
-            hcn,
-            wmo
-        )
-        FROM STDIN
-        WITH CSV HEADER
-    """,
-    session_key="stations_ingest",
+render_directory_view(
+    directory=LANDING_DIR,
+    title="Landing Directory",
+    session_key="stations_landing"
 )
 
-
-# ----------------------------------
-# 2️⃣ Table Explorer
-# ----------------------------------
 st.divider()
 
+
+# ----------------------------------
+# Ingest Button
+# ----------------------------------
+engine = get_engine()
+
+if st.button("Ingest Stations into Bronze", width="stretch"):
+    try:
+        result = ingest(engine)
+        st.success(
+            f"Inserted {result['rows_inserted']:,} rows into "
+            f"{result['table']}"
+        )
+    except Exception as e:
+        st.error(f"Ingest failed: {e}")
+
+st.divider()
+
+
+# ----------------------------------
+# Bronze Table Explorer
+# ----------------------------------
 render_table_explorer(
     table_name="bronze.stations",
     session_key="bronze_stations",
     metric_label="Bronze Station Rows",
     allow_truncate=True,
     truncate_sql="TRUNCATE TABLE bronze.stations;",
+    default_limit=20,
 )
