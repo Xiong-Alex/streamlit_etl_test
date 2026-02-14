@@ -1,13 +1,19 @@
+# DB Connection
+from components.db import get_engine
+
 def download():
     """Download accidents CSV"""
 
-def ingest(engine):
+def ingest():
+    engine = get_engine()
     """Load into bronze.accidents"""
 
-def transform(engine):
+def transform():
+    engine = get_engine()
+
     """bronze → silver"""
 
-def run_all(engine):
+def run_all():
     download()
-    ingest(engine)
-    transform(engine)
+    ingest()
+    transform()

@@ -1,12 +1,12 @@
 import time
 import streamlit as st
-from sqlalchemy import create_engine
 from pipeline.stations import transform
 from components.table_explorer import render_table_explorer
+from components.db import get_engine
 
-engine = create_engine(
-    "postgresql+psycopg2://postgres:postgres@postgres:5432/etl_db"
-)
+
+
+engine = get_engine()
 
 st.title("Transform Stations: Bronze → Silver")
 

@@ -1,4 +1,7 @@
-def build(engine):
+# DB Connection
+from components.db import get_engine
+
+def build():
     """
     Create gold tables:
     - accident_weather_summary

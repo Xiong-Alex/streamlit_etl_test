@@ -7,6 +7,13 @@ import requests
 import pandas as pd
 from sqlalchemy import text
 
+from pipeline.validator import validate_table
+# DB Connection
+from components.db import get_engine
+
+from components.logger import get_logger
+logger = get_logger(__name__)
+
 
 # ----------------------------------
 # Constants
@@ -25,6 +32,18 @@ def download() -> Path:
     Download ghcnd-stations.txt and convert to CSV.
     Returns path to generated CSV file.
     """
+
+    engine = get_engine()
+
+    # -----------------------------
+    # Validate Bronze Before Transform
+    # -----------------------------
+    if not validate_table(
+        engine,
+        "bronze.stations",
+        not_empty=False,
+    ):
+        raise RuntimeError("Bronze table validation failed.")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -85,11 +104,14 @@ def download() -> Path:
 # ==================================
 # INGEST → BRONZE
 # ==================================
-def ingest(engine) -> dict:
+def ingest() -> dict:
     """
     Load ghcnd-stations.csv into bronze.stations.
     Moves file to archive after successful load.
     """
+    engine = get_engine()
+
+
 
     csv_path = OUT_DIR / "ghcnd-stations.csv"
 
@@ -129,11 +151,31 @@ def ingest(engine) -> dict:
 # ==================================
 # TRANSFORM → SILVER (SQL VERSION)
 # ==================================
-def transform(engine, truncate: bool = True) -> dict:
+def transform(truncate: bool = True) -> dict:
     """
     Transform bronze.stations → silver.stations using SQL.
     """
 
+    engine = get_engine()
+
+    # -----------------------------
+    # Validate Bronze Before Transform
+    # -----------------------------
+    if not validate_table(
+        engine,
+        "bronze.stations",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "latitude",
+            "longitude",
+        ],
+    ):
+        raise RuntimeError("Bronze stations validation failed.")
+
+    # -----------------------------
+    # Transform
+    # -----------------------------
     with engine.begin() as conn:
 
         if truncate:
@@ -181,17 +223,18 @@ def transform(engine, truncate: bool = True) -> dict:
     }
 
 
+
 # ==================================
 # FULL DATASET LIFECYCLE
 # ==================================
-def run_all(engine):
+def run_all():
     """
     Run download → ingest → transform
     """
 
     download()
-    bronze_result = ingest(engine)
-    silver_result = transform(engine)
+    bronze_result = ingest()
+    silver_result = transform()
 
     return {
         "bronze": bronze_result,

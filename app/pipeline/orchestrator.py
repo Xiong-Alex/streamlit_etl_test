@@ -3,16 +3,81 @@ from pipeline.weather import run_all as run_weather
 from pipeline.accidents import run_all as run_accidents
 from pipeline.gold import build as run_gold
 
+from pipeline.validator import validate_table
+from components.db import get_engine
 
-def run_full(engine, states: list[str]):
+
+def run_full(states: list[str]):
     """
-    Full DAG execution.
+    Full DAG execution with validation.
     """
 
-    run_stations(engine)
+    engine = get_engine()
 
-    run_weather(engine, states)
+    # -----------------------------
+    # Stations
+    # -----------------------------
+    run_stations()
 
-    run_accidents(engine)
+    if not validate_table(
+        engine,
+        "silver.stations",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "latitude",
+            "longitude",
+            "geom",
+        ],
+    ):
+        raise RuntimeError("Silver stations validation failed — aborting.")
 
-    run_gold(engine)
+    # -----------------------------
+    # Weather
+    # -----------------------------
+    run_weather(states)
+
+    if not validate_table(
+        engine,
+        "silver.weather",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "date",
+            "tmin",
+            "tmax",
+        ],
+    ):
+        raise RuntimeError("Silver weather validation failed — aborting.")
+
+    # -----------------------------
+    # Accidents
+    # -----------------------------
+    run_accidents()
+
+    if not validate_table(
+        engine,
+        "silver.accidents",
+        not_empty=True,
+        required_columns=[
+            "id",
+            "start_time",
+            "latitude",
+            "longitude",
+        ],
+    ):
+        raise RuntimeError("Silver accidents validation failed — aborting.")
+
+    # -----------------------------
+    # Gold
+    # -----------------------------
+    run_gold()
+
+    if not validate_table(
+        engine,
+        "gold.analytics",
+        not_empty=True,
+    ):
+        raise RuntimeError("Gold build failed — no data present.")
+
+    return {"status": "success"}
