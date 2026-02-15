@@ -26,12 +26,12 @@ st.subheader("🌎 Scope")
 
 mode = st.radio(
     "Transform Scope",
-    ["Select States (Default)", "All States"],
+    ["Select States", "All States"],
     index=0,
     horizontal=True
 )
 
-if mode == "Select States (Default)":
+if mode == "Select States":
     selected_states = st.multiselect(
         "Choose States",
         options=["GA"],   # Replace with dynamic list later if desired
