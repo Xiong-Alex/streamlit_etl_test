@@ -68,3 +68,7 @@ KeyError: 'rows_written'
 2026-02-15 03:02:06 | INFO | pipeline.accidents | COPY ingest started: US_Accidents_March23.csv
 2026-02-15 03:03:28 | INFO | pipeline.accidents | Finished ingest US_Accidents_March23.csv (7,728,394 rows)
 2026-02-15 03:03:28 | INFO | pipeline.accidents | Inserted 7,728,394 rows into bronze.us_accidents in 82.58 seconds
+2026-02-15 03:55:32 | INFO | pipeline.weather_daily_pivot | Refreshing silver.weather_daily_pivot
+2026-02-15 03:55:32 | INFO | pipeline.weather_daily_pivot | Weather pivot refreshed: 0 rows in 0.02 seconds
+2026-02-15 03:55:32 | INFO | pipeline.weather_daily_pivot | Refreshing silver.weather_daily_pivot
+2026-02-15 03:55:32 | INFO | pipeline.weather_daily_pivot | Weather pivot refreshed: 0 rows in 0.01 seconds

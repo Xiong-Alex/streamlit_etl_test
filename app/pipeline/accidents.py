@@ -156,20 +156,17 @@ def ingest(truncate: bool = False) -> dict:
 def transform(
     truncate: bool = False,
     states: list[str] | None = None,
-    restrict_to_weather_range: bool = True #hard set to true for now for testing
+    restrict_to_weather_range: bool = True,
 ) -> dict:
     """
     Transform bronze.us_accidents → silver.us_accidents
-
-    Args:
-        truncate: If True, clears silver table first.
-        states: Optional list of states to process.
-        restrict_to_weather_range: If True, only process
-                                   accidents within weather date range.
     """
 
     engine = get_engine()
 
+    # ----------------------------------
+    # Pre-Validation
+    # ----------------------------------
     validate_table(
         engine,
         "bronze.us_accidents",
@@ -183,52 +180,67 @@ def transform(
         ],
     )
 
-    # ----------------------------------
-    # Build Filters
-    # ----------------------------------
-    filters = ["start_lat IS NOT NULL", "start_lng IS NOT NULL"]
-    params = {}
-
-    # Optional state filter
-    if states:
-        placeholders = ",".join(
-            [f":s{i}" for i in range(len(states))]
-        )
-        filters.append(f"state IN ({placeholders})")
-        params.update({f"s{i}": s for i, s in enumerate(states)})
-
-    # Optional weather date range filter
-    if restrict_to_weather_range:
-        weather_range = engine.execute(text("""
-            SELECT MIN(date), MAX(date)
-            FROM silver.weather_daily
-        """)).fetchone()
-
-        if weather_range and weather_range[0] and weather_range[1]:
-            min_date, max_date = weather_range
-            filters.append(
-                "start_time::DATE BETWEEN :min_date AND :max_date"
-            )
-            params["min_date"] = min_date
-            params["max_date"] = max_date
-
-            logger.info(
-                f"Restricting to weather range: {min_date} → {max_date}"
-            )
-        else:
-            logger.warning("Weather range not found. Skipping restriction.")
-
-    where_clause = " AND ".join(filters)
-
     start_time_perf = time.perf_counter()
 
+    # ----------------------------------
+    # Transaction Block
+    # ----------------------------------
     with engine.begin() as conn:
 
+        # ----------------------------------
+        # Optional Truncate
+        # ----------------------------------
         if truncate:
             logger.info("Truncating silver.us_accidents")
             conn.execute(text("TRUNCATE TABLE silver.us_accidents"))
 
-        result = conn.execute(text(f"""
+        # ----------------------------------
+        # Build Dynamic Filters
+        # ----------------------------------
+        filters = ["start_lat IS NOT NULL", "start_lng IS NOT NULL"]
+        params = {}
+
+        # State Filter
+        if states:
+            placeholders = ",".join(
+                [f":s{i}" for i in range(len(states))]
+            )
+            filters.append(f"state IN ({placeholders})")
+            params.update({f"s{i}": s for i, s in enumerate(states)})
+
+        # Weather Date Restriction
+        if restrict_to_weather_range:
+            weather_result = conn.execute(text("""
+                SELECT
+                    MIN(obs_date) AS min_date,
+                    MAX(obs_date) AS max_date
+                FROM silver.weather_daily
+            """)).fetchone()
+
+            if weather_result and weather_result[0] and weather_result[1]:
+                min_date, max_date = weather_result
+
+                filters.append(
+                    "start_time::DATE BETWEEN :min_date AND :max_date"
+                )
+                params["min_date"] = min_date
+                params["max_date"] = max_date
+
+                logger.info(
+                    f"Restricting to weather range: "
+                    f"{min_date} → {max_date}"
+                )
+            else:
+                logger.warning(
+                    "Weather range not found. Skipping restriction."
+                )
+
+        where_clause = " AND ".join(filters)
+
+        # ----------------------------------
+        # Execute Insert
+        # ----------------------------------
+        insert_sql = text(f"""
             INSERT INTO silver.us_accidents (
                 accident_id,
                 severity,
@@ -314,23 +326,31 @@ def transform(
                 )::GEOMETRY(Point, 4326)
             FROM bronze.us_accidents
             WHERE {where_clause}
-            ON CONFLICT (accident_id) DO NOTHING;
-        """), params)
+            ON CONFLICT (accident_id) DO NOTHING
+        """)
 
-        rows_written = result.rowcount
+        result = conn.execute(insert_sql, params)
+
+        # ⚠️ rowcount with INSERT + ON CONFLICT can be unreliable in PG
+        rows_written = result.rowcount if result.rowcount else 0
+
+    # ----------------------------------
+    # Post Validation
+    # ----------------------------------
+    validate_table(engine, "silver.us_accidents", not_empty=True)
 
     elapsed = time.perf_counter() - start_time_perf
 
-    validate_table(engine, "silver.us_accidents", not_empty=True)
-
     logger.info(
-        f"Transformed {rows_written:,} rows in {elapsed:.2f} sec"
+        f"Transformed {rows_written:,} rows "
+        f"in {elapsed:.2f} sec"
     )
 
     return {
         "rows_written": rows_written,
         "seconds": round(elapsed, 2),
     }
+
 
 
 # ==================================
