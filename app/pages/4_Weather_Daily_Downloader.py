@@ -2,6 +2,7 @@
 # Imports
 # ----------------------------------
 import time
+import threading
 from datetime import date
 from pathlib import Path
 import streamlit as st
@@ -14,10 +15,19 @@ from pipeline.weather import download
 
 
 # ----------------------------------
-# Page Title
+# Constants
 # ----------------------------------
-st.title("NOAA Weather Daily Downloader")
+LANDING_DIR = Path("/data/landing/weather")
+LANDING_DIR.mkdir(parents=True, exist_ok=True)
 
+
+# ----------------------------------
+# Page Header
+# ----------------------------------
+st.title("Weather: NOAA Daily Downloader")
+st.caption("Download GHCN daily weather files into landing layer")
+
+st.divider()
 
 engine = get_engine()
 
@@ -43,28 +53,74 @@ all_states = states_df["state"].tolist()
 
 
 # ----------------------------------
-# UI Controls
+# Scope Controls
 # ----------------------------------
+st.subheader("🌎 Station Scope")
+
 mode = st.radio(
     "Station Scope",
-    ["All US (Default)", "Select States"]
+    ["Select States", "All US"],
+    index=0,  # default to Select States
+    horizontal=True
 )
 
 if mode == "Select States":
-    selected_states = st.multiselect("Choose states", all_states)
+    selected_states = st.multiselect(
+        "Choose states",
+        all_states,
+        default=["GA"] if "GA" in all_states else []
+    )
 else:
     selected_states = all_states
 
-start_date = st.date_input("Start Date", date(2015, 1, 1))
-end_date = st.date_input("End Date", date.today())
+# ----------------------------------
+# Station Count
+# ----------------------------------
+if selected_states:
+    placeholders = ",".join([f":s{i}" for i in range(len(selected_states))])
+    query = text(f"""
+        SELECT COUNT(*)
+        FROM silver.stations
+        WHERE state IN ({placeholders})
+    """)
+    params = {f"s{i}": s for i, s in enumerate(selected_states)}
 
-max_workers = st.slider("Download Threads", 4, 20, 12)
+    station_count = pd.read_sql(query, engine, params=params).iloc[0, 0]
+    st.info(f"📍 Stations Selected: {station_count:,}")
+else:
+    station_count = 0
+    st.warning("No states selected.")
+
+
+st.divider()
+
+
+# ----------------------------------
+# Date + Performance Controls
+# ----------------------------------
+st.subheader("⚙️ Download Settings")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    start_date = st.date_input("Start Date", date(2016, 1, 1))
+
+with col2:
+    end_date = st.date_input("End Date", date(2023, 12, 31))
+
+
+max_workers = st.slider(
+    "Download Threads",
+    min_value=4,
+    max_value=20,
+    value=12
+)
 
 
 # ----------------------------------
 # Execute Download
 # ----------------------------------
-if st.button("Download Weather Data", width="stretch"):
+if st.button("Download Weather Data", type="primary", use_container_width=True):
 
     if not selected_states:
         st.warning("No states selected.")
@@ -72,33 +128,67 @@ if st.button("Download Weather Data", width="stretch"):
 
     start_time = time.perf_counter()
 
-    try:
-        result = download(
-            engine,
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    starting_files = len(list(LANDING_DIR.glob("*.csv")))
+    result_container = {}
+
+    def run_download():
+        result_container["result"] = download(
             states=selected_states,
             start_date=start_date,
             end_date=end_date,
             max_workers=max_workers
         )
 
-        elapsed = time.perf_counter() - start_time
+    thread = threading.Thread(target=run_download)
+    thread.start()
 
-        st.success("Download complete")
-        st.write(result)
-        st.write(f"Time: {elapsed:.2f} sec")
+    while thread.is_alive():
+        current_files = len(list(LANDING_DIR.glob("*.csv"))) - starting_files
+        current_files = max(current_files, 0)
 
-    except Exception:
-        import traceback
-        st.error("Download failed")
-        st.code(traceback.format_exc())
+        percent = (
+            min(int((current_files / station_count) * 100), 100)
+            if station_count > 0 else 0
+        )
+
+        progress_bar.progress(percent)
+        status_text.text(
+            f"{current_files:,} / {station_count:,} files downloaded"
+        )
+
+        time.sleep(0.5)
+
+    thread.join()
+
+    elapsed = time.perf_counter() - start_time
+
+    progress_bar.progress(100)
+    status_text.text("Download complete")
+
+    st.success("Weather download completed")
+
+    st.write(f"📦 Files downloaded: {result_container.get('result', {}).get('downloaded', 'N/A')}")
+    st.write(f"⏱ Time: {elapsed:.2f} sec")
+
+    if elapsed > 0:
+        st.write(f"⚡ Files/sec: {current_files / elapsed:,.2f}")
+
+    st.rerun()
+
+
+st.divider()
+
 
 # ----------------------------------
-# Landing Directory Viewer
+# Landing Directory
 # ----------------------------------
-LANDING_DIR = Path("/data/landing/weather")
+st.subheader("📂 Landing Directory")
 
 render_directory_view(
     LANDING_DIR,
-    title="Landing Directory",
+    title=None,
     session_key="weather_landing"
 )

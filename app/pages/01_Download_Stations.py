@@ -13,20 +13,26 @@ from components.directory_viewer import render_directory_view
 # Constants
 # ----------------------------------
 LANDING_DIR = Path("/data/landing/stations")
+LANDING_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ----------------------------------
-# Page Title
+# Page Config
 # ----------------------------------
 st.title("Stations: Download to Landing")
+st.caption("Download and stage NOAA station metadata")
+
+st.divider()
 
 
 # ----------------------------------
-# Directory Viewer
+# Landing Directory Viewer
 # ----------------------------------
+st.subheader("📂 Landing Directory")
+
 render_directory_view(
     directory=LANDING_DIR,
-    title="Landing Directory",
+    title=None,
     session_key="stations_landing"
 )
 
@@ -34,20 +40,29 @@ st.divider()
 
 
 # ----------------------------------
-# Download Button
+# Controls Section
 # ----------------------------------
-if st.button("Download Stations", width="stretch"):
+st.subheader("⬇️ Download Controls")
 
-    with st.spinner("Downloading and processing station file..."):
-        csv_path = download()
+if st.button("Download Stations", type="primary", use_container_width=True):
 
-    st.session_state["stations_csv_path"] = str(csv_path)
+    try:
+        with st.spinner("Downloading and processing station file..."):
+            csv_path = download()
 
-    st.success(f"Saved to: {csv_path}")
+        st.session_state["stations_csv_path"] = str(csv_path)
+
+        st.success("Stations downloaded successfully")
+        st.rerun()
+
+    except Exception:
+        import traceback
+        st.error("Download failed")
+        st.code(traceback.format_exc())
 
 
 # ----------------------------------
-# Preview Section 
+# Preview Section
 # ----------------------------------
 if "stations_csv_path" in st.session_state:
 
@@ -58,8 +73,9 @@ if "stations_csv_path" in st.session_state:
         try:
             df = pd.read_csv(csv_path)
 
-            st.subheader("Preview")
-            st.dataframe(df.head(), width="stretch")
+            st.divider()
+            st.subheader("🔍 Preview (First 5 Rows)")
+            st.dataframe(df.head(), use_container_width=True)
 
         except Exception as e:
             st.warning(f"Preview failed: {e}")

@@ -7,11 +7,10 @@ import requests
 import pandas as pd
 from sqlalchemy import text
 
-from pipeline.validator import validate_table
-# DB Connection
+from pipeline.validators import validate_table
 from components.db import get_engine
-
 from components.logger import get_logger
+
 logger = get_logger(__name__)
 
 
@@ -32,18 +31,6 @@ def download() -> Path:
     Download ghcnd-stations.txt and convert to CSV.
     Returns path to generated CSV file.
     """
-
-    engine = get_engine()
-
-    # -----------------------------
-    # Validate Bronze Before Transform
-    # -----------------------------
-    if not validate_table(
-        engine,
-        "bronze.stations",
-        not_empty=False,
-    ):
-        raise RuntimeError("Bronze table validation failed.")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -98,20 +85,30 @@ def download() -> Path:
     if not csv_path.exists():
         raise RuntimeError("Stations CSV was not created.")
 
+    logger.info("Stations download completed")
+
     return csv_path
 
 
 # ==================================
 # INGEST → BRONZE
 # ==================================
-def ingest() -> dict:
+def ingest(truncate: bool = False) -> dict:
     """
     Load ghcnd-stations.csv into bronze.stations.
     Moves file to archive after successful load.
     """
+
     engine = get_engine()
 
-
+    # -----------------------------
+    # Ensure bronze table exists
+    # -----------------------------
+    validate_table(
+        engine,
+        "bronze.stations",
+        not_empty=False,
+    )
 
     csv_path = OUT_DIR / "ghcnd-stations.csv"
 
@@ -127,7 +124,11 @@ def ingest() -> dict:
         raise ValueError("Stations CSV is empty.")
 
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE bronze.stations"))
+
+        # ✅ Only truncate if requested
+        if truncate:
+            logger.info("Truncating bronze.stations")
+            conn.execute(text("TRUNCATE TABLE bronze.stations"))
 
         df.to_sql(
             name="stations",
@@ -138,30 +139,10 @@ def ingest() -> dict:
             method="multi"
         )
 
-    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    archive_path = ARCHIVE_DIR / csv_path.name
-    csv_path.rename(archive_path)
-
-    return {
-        "rows_inserted": row_count,
-        "table": "bronze.stations"
-    }
-
-
-# ==================================
-# TRANSFORM → SILVER (SQL VERSION)
-# ==================================
-def transform(truncate: bool = True) -> dict:
-    """
-    Transform bronze.stations → silver.stations using SQL.
-    """
-
-    engine = get_engine()
-
     # -----------------------------
-    # Validate Bronze Before Transform
+    # Post-Ingest Validation
     # -----------------------------
-    if not validate_table(
+    validate_table(
         engine,
         "bronze.stations",
         not_empty=True,
@@ -170,18 +151,56 @@ def transform(truncate: bool = True) -> dict:
             "latitude",
             "longitude",
         ],
-    ):
-        raise RuntimeError("Bronze stations validation failed.")
+    )
 
     # -----------------------------
-    # Transform
+    # Archive Ingested File(s)
     # -----------------------------
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    archive_path = ARCHIVE_DIR / csv_path.name
+    csv_path.rename(archive_path)
+
+    logger.info(
+        f"Inserted {row_count:,} rows into bronze.stations "
+        f"(truncate={truncate})"
+    )
+
+    return {
+        "rows_inserted": row_count,
+        "table": "bronze.stations"
+    }
+
+
+# ==================================
+# TRANSFORM → SILVER
+# ==================================
+def transform(truncate: bool = False) -> dict:
+    """
+    Transform bronze.stations → silver.stations using SQL.
+    """
+
+    engine = get_engine()
+
+    # -----------------------------
+    # Pre-Transform Validation
+    # -----------------------------
+    validate_table(
+        engine,
+        "bronze.stations",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "latitude",
+            "longitude",
+        ],
+    )
+
     with engine.begin() as conn:
 
         if truncate:
             conn.execute(text("TRUNCATE TABLE silver.stations"))
 
-        conn.execute(text("""
+        result = conn.execute(text("""
             INSERT INTO silver.stations (
                 station_id,
                 country_code,
@@ -218,10 +237,31 @@ def transform(truncate: bool = True) -> dict:
             ON CONFLICT (station_id) DO NOTHING;
         """))
 
-    return {
-        "rows_written": "Check silver.stations count"
-    }
+        rows_written = result.rowcount
 
+    # -----------------------------
+    # Post-Transform Validation
+    # -----------------------------
+    validate_table(
+        engine,
+        "silver.stations",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "latitude",
+            "longitude",
+            "geom",
+        ],
+    )
+
+    logger.info(
+        f"Cleaned and transformed {rows_written:,} rows "
+        f"from bronze.stations → silver.stations"
+    )
+
+    return {
+        "rows_written": rows_written
+    }
 
 
 # ==================================
@@ -229,7 +269,8 @@ def transform(truncate: bool = True) -> dict:
 # ==================================
 def run_all():
     """
-    Run download → ingest → transform
+    Run full dataset lifecycle:
+        download → ingest → transform
     """
 
     download()

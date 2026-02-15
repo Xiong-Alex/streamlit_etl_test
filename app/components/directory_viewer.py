@@ -39,8 +39,11 @@ def render_directory_view(
     session_key: str | None = None,
 ):
     """
-    Simple reusable directory viewer.
-    Preview is capped for performance.
+    Reusable directory viewer with:
+    - Metrics
+    - Limited preview
+    - Refresh button
+    - Clear directory button (.gitkeep preserved)
     """
 
     if title:
@@ -54,36 +57,54 @@ def render_directory_view(
 
     if df.empty:
         st.info("No files found.")
-        return
 
-    total_files = len(df)
+    else:
+        total_files = len(df)
+
+        # ----------------------------------
+        # Metrics
+        # ----------------------------------
+        col1, col2 = st.columns(2)
+
+        col1.metric("File Count", f"{total_files:,}")
+        col2.metric(
+            "Total Size (MB)",
+            round(df["Size (KB)"].sum() / 1024, 2)
+        )
+
+        # ----------------------------------
+        # Limited Preview
+        # ----------------------------------
+        if total_files > MAX_PREVIEW_FILES:
+            st.info(
+                f"Showing first {MAX_PREVIEW_FILES:,} "
+                f"of {total_files:,} files."
+            )
+            df = df.head(MAX_PREVIEW_FILES)
+
+        st.dataframe(df, use_container_width=True)
 
     # ----------------------------------
-    # Metrics
+    # Controls
     # ----------------------------------
     col1, col2 = st.columns(2)
 
-    col1.metric("File Count", f"{total_files:,}")
-    col2.metric(
-        "Total Size (MB)",
-        round(df["Size (KB)"].sum() / 1024, 2)
-    )
-
-    # ----------------------------------
-    # Limited Preview
-    # ----------------------------------
-    if total_files > MAX_PREVIEW_FILES:
-        st.info(
-            f"Showing first {MAX_PREVIEW_FILES:,} of {total_files:,} files."
-        )
-        df = df.head(MAX_PREVIEW_FILES)
-
-    st.dataframe(df, width="stretch")
-
-    # ----------------------------------
-    # Refresh
-    # ----------------------------------
     refresh_key = f"refresh_{session_key}" if session_key else None
+    clear_key = f"clear_{session_key}" if session_key else None
 
-    if st.button("Refresh Directory", key=refresh_key, width="stretch"):
+    # 🔄 Refresh
+    if col1.button("Refresh Directory", key=refresh_key, use_container_width=True):
+        st.rerun()
+
+    # 🧹 Clear (preserve .gitkeep)
+    if col2.button("Clear Directory", key=clear_key, use_container_width=True):
+
+        deleted = 0
+
+        for file in directory.glob("*"):
+            if file.is_file() and file.name != ".gitkeep":
+                file.unlink()
+                deleted += 1
+
+        st.success(f"Deleted {deleted} file(s). (.gitkeep preserved)")
         st.rerun()

@@ -6,7 +6,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -19,14 +19,17 @@ services:
     build: .                # Uses Dockerfile
     ports:
       - "8501:8501"
+    env_file:
+      - .env
     volumes:
       - ./app:/app          # 🔥 Live mount your app code
       - ./data:/data        # 🔥 Mount landing/processed data
+      - ./logs:/app/logs    # logs
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
-
 volumes:
   pgdata:
+

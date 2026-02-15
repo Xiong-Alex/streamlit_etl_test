@@ -9,6 +9,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 from sqlalchemy import text
 
+from pipeline.validators import validate_table
+from components.db import get_engine
+from components.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ==================================
 # Constants
@@ -25,15 +31,20 @@ ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 # ==================================
 # DOWNLOAD
 # ==================================
-def download(engine, states: list[str], start_date=None, end_date=None, max_workers=12):
+def download(states: list[str], start_date=None, end_date=None, max_workers=12):
     """
     Download NOAA .dly files for stations in selected states.
+    Writes filtered CSV files into landing directory.
     """
+
+    engine = get_engine()
 
     if not states:
         return {"downloaded": 0}
 
+    # -----------------------------
     # Fetch station_ids
+    # -----------------------------
     placeholders = ",".join([f":s{i}" for i in range(len(states))])
     query = text(f"""
         SELECT station_id
@@ -52,7 +63,11 @@ def download(engine, states: list[str], start_date=None, end_date=None, max_work
     if end_date is None:
         end_date = date.today()
 
+    downloaded = 0
+
     def download_station(station_id: str):
+        nonlocal downloaded
+
         out_csv = LANDING_DIR / f"{station_id}.csv"
         if out_csv.exists():
             return
@@ -105,21 +120,30 @@ def download(engine, states: list[str], start_date=None, end_date=None, max_work
                         line[base+7].strip() or None,
                     ])
 
+        downloaded += 1
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(download_station, sid) for sid in station_ids]
         for f in as_completed(futures):
             f.result()
 
-    return {"downloaded": len(station_ids)}
+    logger.info(f"Downloaded {downloaded} weather station files")
+
+    return {"downloaded": downloaded}
 
 
 # ==================================
 # INGEST → BRONZE
 # ==================================
-def ingest(engine, files: list[str] | None = None):
+def ingest(files: list[Path] | None = None, max_workers: int = 4):
     """
-    Ingest weather CSV files from landing directory into bronze.weather_daily
+    Multi-threaded COPY ingest into bronze.weather_daily.
     """
+
+    engine = get_engine()
+
+    # Ensure bronze table exists
+    validate_table(engine, "bronze.weather_daily", not_empty=False)
 
     if files is None:
         files = list(LANDING_DIR.glob("*.csv"))
@@ -129,38 +153,98 @@ def ingest(engine, files: list[str] | None = None):
 
     total_rows = 0
 
-    with engine.begin() as conn:
-        for file in files:
-            df = pd.read_csv(file)
+    def worker(file: Path) -> int:
+        try:
+            raw_conn = engine.raw_connection()
+            try:
+                cur = raw_conn.cursor()
+                try:
+                    with open(file, "r") as f:
+                        cur.copy_expert("""
+                            COPY bronze.weather_daily (
+                                station_id,
+                                obs_date,
+                                element,
+                                value,
+                                m_flag,
+                                q_flag,
+                                s_flag
+                            )
+                            FROM STDIN
+                            WITH (FORMAT CSV, HEADER TRUE)
+                        """, f)
 
-            total_rows += len(df)
+                    raw_conn.commit()
+                finally:
+                    cur.close()
+            finally:
+                raw_conn.close()
 
-            df.to_sql(
-                name="weather_daily",
-                schema="bronze",
-                con=conn,
-                if_exists="append",
-                index=False,
-                method="multi"
-            )
+            # Count rows (minus header)
+            with open(file, "r") as f:
+                row_count = sum(1 for _ in f) - 1
 
-            # Move to archive
             file.rename(ARCHIVE_DIR / file.name)
+
+            return row_count
+
+        except Exception as e:
+            logger.error(f"Failed ingest for {file.name}: {e}")
+            return 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(worker, f) for f in files]
+        for future in as_completed(futures):
+            total_rows += future.result()
+
+    # Post ingest validation
+    validate_table(
+        engine,
+        "bronze.weather_daily",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "obs_date",
+            "element",
+            "value",
+        ],
+    )
+
+    logger.info(f"Inserted {total_rows:,} rows into bronze.weather_daily")
 
     return {"rows_inserted": total_rows}
 
 
 # ==================================
-# TRANSFORM → SILVER (SQL)
+# TRANSFORM → SILVER
 # ==================================
-def transform(engine):
+def transform(truncate: bool = False) -> dict:
     """
-    Transform bronze.weather_daily → silver.weather_daily
+    Transform bronze.weather_daily → silver.weather_daily.
     """
+
+    engine = get_engine()
+
+    # Pre-transform validation
+    validate_table(
+        engine,
+        "bronze.weather_daily",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "obs_date",
+            "element",
+            "value",
+        ],
+    )
 
     with engine.begin() as conn:
 
-        conn.execute(text("""
+        if truncate:
+            logger.info("Truncating silver.weather_daily")
+            conn.execute(text("TRUNCATE TABLE silver.weather_daily"))
+
+        result = conn.execute(text("""
             INSERT INTO silver.weather_daily (
                 station_id,
                 obs_date,
@@ -177,19 +261,39 @@ def transform(engine):
             DO UPDATE SET value = EXCLUDED.value;
         """))
 
-    return {"status": "silver.weather_daily updated"}
+        rows_written = result.rowcount
+
+    # Post-transform validation
+    validate_table(
+        engine,
+        "silver.weather_daily",
+        not_empty=True,
+        required_columns=[
+            "station_id",
+            "obs_date",
+            "element",
+            "value",
+        ],
+    )
+
+    logger.info(
+        f"Cleaned and transformed {rows_written:,} rows "
+        f"from bronze.weather_daily → silver.weather_daily"
+    )
+
+    return {"rows_written": rows_written}
 
 
 # ==================================
 # RUN ALL
 # ==================================
-def run_all(engine, states: list[str]):
-    d = download(engine, states)
-    i = ingest(engine)
-    t = transform(engine)
+def run_all(states: list[str]):
+    download_result = download(states)
+    ingest_result = ingest()
+    transform_result = transform()
 
     return {
-        "download": d,
-        "ingest": i,
-        "transform": t
+        "download": download_result,
+        "ingest": ingest_result,
+        "transform": transform_result,
     }

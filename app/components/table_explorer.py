@@ -9,8 +9,7 @@ def render_table_explorer(
     session_key: str,
     metric_label: str | None = None,
     allow_truncate: bool = False,
-    truncate_sql: str | None = None,
-    default_limit: int = 20,
+    default_limit: int = 10,
 ):
     engine = get_engine()
 
@@ -88,15 +87,19 @@ def render_table_explorer(
     # TRUNCATE BUTTON
     # ----------------------------------
     with col2:
-        if allow_truncate and truncate_sql:
+        if allow_truncate:
             if st.button(
                 "Truncate Table",
                 key=f"truncate_{session_key}",
-                width="stretch"
+                use_container_width=True
             ):
                 try:
                     with engine.begin() as conn:
-                        conn.execute(text(truncate_sql))
+                        conn.execute(text(f"TRUNCATE TABLE {table_name};"))
+
                     st.success(f"{table_name} truncated.")
+                    st.rerun()
+
                 except Exception as e:
                     st.error(f"Truncate failed: {e}")
+

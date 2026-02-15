@@ -1,7 +1,7 @@
 from pipeline.stations import run_all as run_stations
 from pipeline.weather import run_all as run_weather
 from pipeline.accidents import run_all as run_accidents
-from pipeline.gold import build as run_gold
+from app.pipeline.accident_weather import build as run_gold
 
 from pipeline.validator import validate_table
 from components.db import get_engine

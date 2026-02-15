@@ -1,0 +1,70 @@
+test
+2026-02-14 21:09:36 | INFO | pipeline.stations | Stations download completed
+2026-02-14 22:26:51 | INFO | pipeline.stations | Stations download completed
+2026-02-14 22:27:09 | INFO | pipeline.stations | Inserted 129657 rows into bronze.stations
+2026-02-14 22:27:30 | INFO | pipeline.stations | Cleaned and transformed 75,846 rows from bronze.stations → silver.stations
+2026-02-14 22:40:50 | INFO | pipeline.weather | Cleaned and transformed 4,703,282 rows from bronze.weather_daily → silver.weather_daily
+2026-02-14 22:42:10 | INFO | pipeline.accidents | Ingesting US_Accidents_March23.csv
+2026-02-14 22:47:21 | INFO | pipeline.accidents | Ingesting US_Accidents_March23.csv
+2026-02-14 22:56:04 | INFO | pipeline.accidents | COPY ingest started: US_Accidents_March23.csv
+2026-02-14 22:57:59 | INFO | pipeline.accidents | Finished ingest US_Accidents_March23.csv (7,728,394 rows)
+2026-02-14 22:57:59 | INFO | pipeline.accidents | Inserted 7,728,394 rows into bronze.us_accidents in 114.39 seconds
+2026-02-14 23:02:40 | INFO | pipeline.accidents | Transforming bronze → silver (accidents)
+2026-02-14 23:04:35 | INFO | pipeline.accidents | Cleaned and transformed 7,728,394 rows from bronze.us_accidents → silver.us_accidents in 114.98 seconds
+2026-02-14 23:05:11 | INFO | pipeline.accident_station_map | Building accident_station_map (nearest station mapping)
+2026-02-14 23:12:48 | INFO | pipeline.accident_station_map | Accident → Station map built: 7,728,394 rows in 457.48 seconds
+2026-02-14 23:12:48 | ERROR | __main__ | Accident station map build failed
+Traceback (most recent call last):
+  File "/app/pages/10_create_accident_station_map.py", line 48, in <module>
+    f"Mapped {result['rows_written']:,} accidents "
+              ~~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'rows_written'
+2026-02-14 23:19:48 | INFO | pipeline.accident_station_map | Building accident_station_map (nearest station mapping)
+2026-02-14 23:19:54 | INFO | pipeline.accident_station_map | Building accident_station_map (nearest station mapping)
+2026-02-14 23:21:29 | INFO | pipeline.weather | Downloaded 1407 weather station files
+2026-02-14 23:21:54 | INFO | pipeline.weather | Inserted 870,606 rows into bronze.weather_daily
+2026-02-14 23:22:08 | INFO | pipeline.weather | Cleaned and transformed 870,606 rows from bronze.weather_daily → silver.weather_daily
+2026-02-14 23:23:00 | INFO | pipeline.accidents | COPY ingest started: US_Accidents_March23.csv
+2026-02-14 23:24:46 | INFO | pipeline.accidents | Finished ingest US_Accidents_March23.csv (7,728,394 rows)
+2026-02-14 23:24:46 | INFO | pipeline.accidents | Inserted 7,728,394 rows into bronze.us_accidents in 106.02 seconds
+2026-02-14 23:25:01 | INFO | pipeline.accidents | Transforming bronze → silver (accidents)
+2026-02-14 23:35:15 | INFO | pipeline.accident_station_map | Accident → Station map built: 0 rows in 921.49 seconds
+2026-02-14 23:35:15 | INFO | pipeline.accident_station_map | Accident → Station map built: 0 rows in 459.34 seconds
+2026-02-14 23:35:16 | INFO | pipeline.accidents | Cleaned and transformed 0 rows from bronze.us_accidents → silver.us_accidents in 614.34 seconds
+2026-02-14 23:36:49 | INFO | pipeline.accidents | Applying date filter: 2021-01-01 → 2021-12-31
+2026-02-14 23:36:49 | INFO | pipeline.accidents | Transforming bronze → silver (accidents)
+2026-02-14 23:36:49 | INFO | pipeline.accidents | Cleaned and transformed 0 rows in 0.01 seconds
+2026-02-14 23:37:26 | INFO | pipeline.accidents | COPY ingest started: US_Accidents_March23.csv
+2026-02-14 23:39:10 | INFO | pipeline.accidents | Finished ingest US_Accidents_March23.csv (7,728,394 rows)
+2026-02-14 23:39:10 | INFO | pipeline.accidents | Inserted 7,728,394 rows into bronze.us_accidents in 103.23 seconds
+2026-02-14 23:39:45 | INFO | pipeline.accidents | Applying date filter: 2021-01-01 → 2021-12-31
+2026-02-14 23:39:45 | INFO | pipeline.accidents | Transforming bronze → silver (accidents)
+2026-02-14 23:40:04 | INFO | pipeline.accidents | Cleaned and transformed 1,563,753 rows in 18.66 seconds
+2026-02-14 23:40:32 | INFO | pipeline.accident_station_map | Building accident_station_map (nearest station mapping)
+2026-02-14 23:42:04 | INFO | pipeline.accident_station_map | Accident → Station map built: 1,563,753 rows in 91.42 seconds
+2026-02-14 23:57:39 | INFO | pipeline.weather_daily_pivot | Refreshing silver.weather_daily_pivot
+2026-02-15 00:02:06 | INFO | pipeline.weather_daily_pivot | Refreshing silver.weather_daily_pivot
+2026-02-15 00:02:08 | INFO | pipeline.weather_daily_pivot | Weather pivot refreshed: 310,783 rows in 2.06 seconds
+2026-02-15 00:07:44 | INFO | pipeline.accident_weather | Truncating gold.accident_weather
+2026-02-15 00:07:44 | INFO | pipeline.accident_weather | Building gold.accident_weather
+2026-02-15 00:08:04 | INFO | pipeline.accident_weather | Gold accident_weather built: 1,563,753 rows in 19.78 seconds
+2026-02-15 00:14:27 | INFO | pipeline.accident_weather | Building gold.accident_weather
+2026-02-15 00:14:47 | INFO | pipeline.accident_weather | Gold accident_weather built: 1,563,753 rows in 19.65 seconds
+2026-02-15 00:15:43 | INFO | pipeline.accident_weather | Truncating gold.accident_weather
+2026-02-15 00:15:43 | INFO | pipeline.accident_weather | Building gold.accident_weather
+2026-02-15 00:16:03 | INFO | pipeline.accident_weather | Gold accident_weather built: 1,563,753 rows in 19.84 seconds
+2026-02-15 00:30:41 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:30:57 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:34:29 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:35:00 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:35:26 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:39:08 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:58:47 | INFO | pipeline.stations | Stations download completed
+2026-02-15 00:58:58 | INFO | pipeline.stations | Truncating bronze.stations
+2026-02-15 00:59:10 | INFO | pipeline.stations | Inserted 129,657 rows into bronze.stations (truncate=True)
+2026-02-15 01:07:12 | INFO | pipeline.stations | Cleaned and transformed 75,846 rows from bronze.stations → silver.stations
+2026-02-15 03:00:28 | INFO | pipeline.accidents | Downloading accidents dataset from Kaggle
+2026-02-15 03:01:48 | INFO | pipeline.accidents | Download complete
+2026-02-15 03:02:06 | INFO | pipeline.accidents | COPY ingest started: US_Accidents_March23.csv
+2026-02-15 03:03:28 | INFO | pipeline.accidents | Finished ingest US_Accidents_March23.csv (7,728,394 rows)
+2026-02-15 03:03:28 | INFO | pipeline.accidents | Inserted 7,728,394 rows into bronze.us_accidents in 82.58 seconds
